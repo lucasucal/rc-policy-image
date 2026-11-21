@@ -458,23 +458,57 @@ def run_program(submission: Path, spec: EntrySpec, script: Optional[Path]) -> in
     return EXIT_PROGRAM_EXITED
 
 
-def listening_ports(proc_dir: str = "/proc/net") -> "set[int]":
-    """TCP ports with a LISTEN socket in this network namespace (any address), from /proc/net/tcp{,6}."""
-    ports: set = set()
+def _decode_proc_addr(hexaddr: str):
+    """/proc/net/tcp{,6} address field -> ipaddress object (kernel prints each 32-bit word in host order)."""
+    import ipaddress
+    import sys as _sys
+    raw = bytes.fromhex(hexaddr)
+    if len(raw) % 4:
+        raise ValueError(hexaddr)
+    order = "little" if _sys.byteorder == "little" else "big"
+    packed = b"".join(int.from_bytes(raw[i:i + 4], order).to_bytes(4, "big") for i in range(0, len(raw), 4))
+    addr = ipaddress.ip_address(packed)
+    mapped = getattr(addr, "ipv4_mapped", None)
+    return mapped or addr
+
+
+def listening_sockets(proc_dir: str = "/proc/net") -> "Optional[dict]":
+    """{port: [ip, ...]} for TCP LISTEN sockets in this network namespace, from /proc/net/tcp{,6}.
+    None when /proc/net/tcp is unreadable (the caller then cannot tell loopback from reachable)."""
+    out: dict = {}
+    readable = False
     for name in ("tcp", "tcp6"):
         try:
             with open(os.path.join(proc_dir, name), encoding="ascii", errors="replace") as fh:
+                readable = True
                 next(fh, None)
                 for line in fh:
                     parts = line.split()
                     if len(parts) > 3 and parts[3] == "0A":  # TCP_LISTEN
                         try:
-                            ports.add(int(parts[1].rsplit(":", 1)[1], 16))
+                            host, port = parts[1].rsplit(":", 1)
+                            out.setdefault(int(port, 16), []).append(_decode_proc_addr(host))
                         except (IndexError, ValueError):
                             pass
         except OSError:
             continue
-    return ports
+    return out if readable else None
+
+
+def listening_ports(proc_dir: str = "/proc/net") -> "set[int]":
+    """TCP ports with a LISTEN socket in this network namespace (any address), from /proc/net/tcp{,6}."""
+    return set(listening_sockets(proc_dir) or ())
+
+
+def port_reachability(port: int, sockets: "Optional[dict]") -> str:
+    """'reachable' (a wildcard or non-loopback listener: the runner connects via the container IP),
+    'loopback' (only 127.0.0.0/8 or ::1), 'none', or 'unknown' (/proc unreadable)."""
+    if sockets is None:
+        return "unknown"
+    addrs = sockets.get(port)
+    if not addrs:
+        return "none"
+    return "reachable" if any(not a.is_loopback for a in addrs) else "loopback"
 
 
 def listen_deadline_seconds(env) -> float:
@@ -501,43 +535,64 @@ def not_listening_message(port: int, deadline: float, others: "Iterable[int]" = 
             "not-ready via /readyz")
 
 
+def loopback_only_message(port: int, deadline: Optional[float] = None) -> str:
+    when = f" after {deadline:g} s" if deadline is not None else " yet"
+    return (f"your server listens on 127.0.0.1:{port} only{when}; the judge connects through the "
+            f"container's network address, so bind 0.0.0.0:{port} (read $RC_POLICY_PORT; "
+            f"host=\"0.0.0.0\", not \"localhost\" or \"127.0.0.1\")")
+
+
 def start_port_watchdog(port: int, *, deadline: float = DEFAULT_LISTEN_DEADLINE_SECONDS,
                         warn_after: float = 60.0, warn_every: float = 120.0, poll: float = 1.0,
-                        exit_fn=None, ports_fn=None) -> "threading.Thread":
-    """Program form: if nothing listens on the contract port within `deadline` seconds, say why and
-    exit EXIT_NOT_LISTENING (the runner would otherwise wait out the whole warmup deadline, again
-    for every restart). Warns earlier at `warn_after`. deadline <= 0 only warns."""
+                        exit_fn=None, ports_fn=None, sockets_fn=None) -> "threading.Thread":
+    """Program form: if nothing reachable listens on the contract port within `deadline` seconds, say
+    why and exit EXIT_NOT_LISTENING (the runner would otherwise wait out the whole warmup deadline,
+    again for every restart). A loopback-only listener does NOT satisfy the watchdog: the runner
+    connects via the container IP. Warns earlier at `warn_after`. deadline <= 0 only warns.
+    `ports_fn` (tests) supplies ports treated as reachable; `sockets_fn` supplies {port: [ip, ...]}."""
     import socket
     import threading
     import time
     exit_fn = exit_fn or os._exit
-    ports_fn = ports_fn or listening_ports
+    if sockets_fn is None:
+        sockets_fn = (lambda: {p: [] for p in ports_fn()}) if ports_fn else listening_sockets
 
-    def listening() -> bool:
-        if port in ports_fn():
-            return True
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1):
-                return True
-        except OSError:
-            return False
+    def state() -> str:
+        sockets = sockets_fn()
+        if ports_fn is not None:
+            return "reachable" if port in ports_fn() else "none"
+        status = port_reachability(port, sockets)
+        if status == "unknown":  # cannot read /proc: a loopback probe is the best available signal
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                    return "reachable"
+            except OSError:
+                return "none"
+        return status
 
     def watch() -> None:
         start = time.monotonic()
         next_warn = warn_after
         while True:
-            if listening():
+            status = state()
+            if status == "reachable":
                 return
             elapsed = time.monotonic() - start
             if deadline > 0 and elapsed >= deadline:
-                print(f"[rc_runtime] startup error program_not_listening: "
-                      f"{not_listening_message(port, deadline, ports_fn())}", flush=True)
+                if status == "loopback":
+                    detail = loopback_only_message(port, deadline)
+                else:
+                    detail = not_listening_message(port, deadline, (ports_fn() if ports_fn else sockets_fn() or {}))
+                print(f"[rc_runtime] startup error program_not_listening: {detail}", flush=True)
                 exit_fn(EXIT_NOT_LISTENING)
                 return
             if elapsed >= next_warn:
-                print(f"[rc_runtime] WARNING: nothing is listening on port {port} yet. Your program must "
-                      f"listen on 0.0.0.0:{port} (read $RC_POLICY_PORT); a different port is never probed.",
-                      flush=True)
+                if status == "loopback":
+                    print(f"[rc_runtime] WARNING: {loopback_only_message(port)}", flush=True)
+                else:
+                    print(f"[rc_runtime] WARNING: nothing is listening on port {port} yet. Your program must "
+                          f"listen on 0.0.0.0:{port} (read $RC_POLICY_PORT); a different port is never probed.",
+                          flush=True)
                 next_warn += warn_every
             if deadline <= 0 and elapsed > 1800:
                 return
