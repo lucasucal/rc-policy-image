@@ -189,8 +189,14 @@ def check_static_shadow(module_name: str, reserved: Iterable[str]) -> None:
             EXIT_RESERVED_SHADOW)
 
 
-def _under(path: Optional[str], root: str) -> bool:
-    if not path:
+def _under(path: Any, root: str) -> bool:
+    """True when ``path`` is an ABSOLUTE path that resolves inside ``root``.
+
+    Relative paths are ignored on purpose: they are resolved against the process cwd
+    (which is the submission root), so e.g. torch's ``torch.ops.__file__ == "_ops.py"``
+    would otherwise look like a submission file. Independent of the cwd.
+    """
+    if not isinstance(path, str) or not path or not os.path.isabs(path):
         return False
     try:
         real = os.path.realpath(path)
@@ -200,13 +206,23 @@ def _under(path: Optional[str], root: str) -> bool:
 
 
 def _module_locations(mod: Any) -> list[str]:
-    locs = []
-    f = getattr(mod, "__file__", None)
-    if f:
-        locs.append(f)
+    """Absolute file/package locations of a module; builtin, frozen, namespace and
+    relative-path modules contribute nothing."""
+    locs: list[str] = []
     try:
-        locs.extend(list(getattr(mod, "__path__", None) or []))
-    except Exception:  # exotic __path__ objects
+        f = getattr(mod, "__file__", None)
+        if isinstance(f, str) and os.path.isabs(f):
+            locs.append(f)
+        spec = getattr(mod, "__spec__", None)
+        origin = getattr(spec, "origin", None)
+        if (isinstance(origin, str) and os.path.isabs(origin)
+                and getattr(spec, "has_location", True)):
+            locs.append(origin)
+        if f is not None or origin not in (None, "namespace"):  # not a namespace package
+            for p in list(getattr(mod, "__path__", None) or []):
+                if isinstance(p, str) and os.path.isabs(p):
+                    locs.append(p)
+    except Exception:  # exotic module objects
         pass
     return locs
 

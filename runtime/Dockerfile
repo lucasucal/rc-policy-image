@@ -58,6 +58,24 @@ COPY runtime/locks/requirements.sdist.txt /tmp/requirements.sdist.txt
 RUN pip install --no-deps --require-hashes --no-binary=antlr4-python3-runtime -r /tmp/requirements.sdist.txt \
     && rm /tmp/requirements.sdist.txt
 
+# 1c. numba.cuda (KSI-020): numba finds libNVVM only as libnvvm.so.<n> under a CUDA tree
+#     (<root>/nvvm/lib64, <root>/nvvm/libdevice, <root>/lib64 with libcudart); its NUMBA_CUDA_*
+#     variables do not help (tried). The nvidia-nvvm wheel (pinned to the 13.0.x line so its PTX ISA
+#     9.0 is accepted by driver 580) keeps those pieces under site-packages/nvidia/cu13, so link
+#     them into the base image's /usr/local/cuda (which already has lib64/libcudart.so.13), the
+#     directory numba falls back to. CUDA_HOME is deliberately not set: cupy, JAX and torch paths
+#     stay unchanged.
+RUN python - <<'PY'
+import glob, os, site
+root = os.path.join(site.getsitepackages()[0], "nvidia", "cu13")
+dst = "/usr/local/cuda/nvvm"
+assert glob.glob(root + "/lib/libnvvm.so.*"), "libnvvm missing from the nvidia-nvvm wheel"
+assert os.path.exists("/usr/local/cuda/lib64"), "base image has no /usr/local/cuda/lib64"
+os.makedirs(dst, exist_ok=True)
+os.symlink(root + "/lib", dst + "/lib64")
+os.symlink(root + "/nvvm/libdevice", dst + "/libdevice")
+PY
+
 # 2. SDK and loader into site-packages (not editable, not importable from /submission).
 COPY starter/rc_sdk /tmp/build/rc_sdk
 COPY runtime/pyproject.toml /tmp/build/runtime/pyproject.toml

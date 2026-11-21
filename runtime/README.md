@@ -42,6 +42,17 @@ The `-I` test needs `rc_sdk` and `rc_runtime` installed (`pip install ./starter/
    `/opt/rc/release.json` inside the image is the `--partial` build-time copy (no digests); the loader reads only `reserved_modules` and `stdlib_module_names` from it.
 5. Update the numeric format and package status cells in `numeric_formats.json` / `--package-status` only from real test results.
 
+## Build and publish via GitHub Actions
+
+Free native builds (amd64 on `ubuntu-24.04`, arm64 on `ubuntu-24.04-arm`, no QEMU) run in the small public mirror `lucasucal/rc-policy-image`, which holds only the build context (`runtime/` image files, `starter/rc_sdk/`) and the workflow from `runtime/ci/build-image.yml`. The monorepo stays private and is the source of truth; never edit the mirror.
+
+Release:
+
+1. Commit the runtime/lock changes here. Then `git clone git@github.com:lucasucal/rc-policy-image.git ../rc-policy-image` (once) and `runtime/tools/sync_build_repo.sh ../rc-policy-image --tag v6`. It rsyncs exactly the context, installs the workflow and README, and commits with the monorepo SHA in the message (idempotent; it never pushes).
+2. `cd ../rc-policy-image && git push origin main v6`. The tag push starts the workflow (or run it by hand with a `tag` input).
+3. The workflow builds both architectures without layer cache (the pip layer is several GB and would not fit the 10 GB cache limit), pushes each by digest, creates `ghcr.io/lucasucal/rc-policy:v6` plus `:v6-amd64` / `:v6-arm64`, prints `imagetools inspect`, and uploads artifacts: `build-<arch>` (`digest-<arch>.txt`, `packages.<arch>.json`, `reserved.<arch>.json`) and `release-inputs` (digests, `manifest.json`). Use them for `rc_release.py write` (step 4 above) and commit `runtime/release.json`.
+4. One-time: the package `rc-policy` must grant the mirror repo write access (package settings, Manage Actions access, Add repository, Write); this is done, and the workflow publishes to `ghcr.io/lucasucal/rc-policy`. Build args match the Spark builds (per-arch base digests, `RELEASE_ID=rc-policy-<tag>`, `IMAGE_TAG=<tag>`); the baked `release.json` is `--partial` as before.
+
 ## Verified here (x86-64 CPU, no Docker daemon, no GPU)
 
 Loader/server unit and contract tests, release schema validation, cache layout and `huggingface_hub` 2.4.0 offline resolution from a read-only directory without writes, `uv` resolution of the full stack for both architectures with identical pins.

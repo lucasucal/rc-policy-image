@@ -15,7 +15,7 @@ on:
       image:
         description: "Image repository (without tag)"
         required: false
-        default: ghcr.io/lucasucal/rc-policy-ci
+        default: ghcr.io/lucasucal/rc-policy
         type: string
   push:
     tags: ["v*"]
@@ -28,7 +28,7 @@ env:
   # Tag pushes build the real package unless the workflow default is overridden; keep in sync with
   # the input default above (switch both to ghcr.io/lucasucal/rc-policy once the package grants
   # this repository write access).
-  IMAGE: ${{ inputs.image || 'ghcr.io/lucasucal/rc-policy-ci' }}
+  IMAGE: ${{ inputs.image || 'ghcr.io/lucasucal/rc-policy' }}
   TAG: ${{ inputs.tag || github.ref_name }}
   # Base pinned per platform manifest of nvidia/cuda:13.0.3-base-ubuntu24.04
   # (index sha256:7c7413a56200486f71f181cad9310f6fd31b6bb21816ade15fc9c1e1e927a5c1).
