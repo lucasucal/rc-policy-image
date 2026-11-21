@@ -1,0 +1,10 @@
+*
+!starter/rc_sdk
+!runtime/pyproject.toml
+!runtime/rc_runtime
+!runtime/locks
+!runtime/tools
+!runtime/numeric_formats.json
+**/__pycache__
+**/*.egg-info
+**/build

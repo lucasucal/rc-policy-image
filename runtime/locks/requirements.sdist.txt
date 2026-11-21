@@ -1,0 +1,3 @@
+# Pure-python sdist-only pins (built to a wheel in the image; hashes from uv)
+antlr4-python3-runtime==4.9.3 \
+    --hash=sha256:f224469b4168294902bb1efa80a8bf7855f24c99aef99cbefc1bcd3cce77881b

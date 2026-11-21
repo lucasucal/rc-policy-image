@@ -1,0 +1,149 @@
+# GENERATED into the build repo by runtime/tools/sync_build_repo.sh from the private monorepo
+# (runtime/ci/build-image.yml). Do not edit here.
+#
+# Native per-arch builds of the Reality Check policy image (no QEMU), pushed by digest, then
+# merged into one multi-arch manifest. Build context = this repo root (runtime/ + starter/rc_sdk/).
+name: build-image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag, e.g. v6"
+        required: true
+        type: string
+      image:
+        description: "Image repository (without tag)"
+        required: false
+        default: ghcr.io/lucasucal/rc-policy-ci
+        type: string
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # Tag pushes build the real package unless the workflow default is overridden; keep in sync with
+  # the input default above (switch both to ghcr.io/lucasucal/rc-policy once the package grants
+  # this repository write access).
+  IMAGE: ${{ inputs.image || 'ghcr.io/lucasucal/rc-policy-ci' }}
+  TAG: ${{ inputs.tag || github.ref_name }}
+  # Base pinned per platform manifest of nvidia/cuda:13.0.3-base-ubuntu24.04
+  # (index sha256:7c7413a56200486f71f181cad9310f6fd31b6bb21816ade15fc9c1e1e927a5c1).
+  BASE_AMD64: nvidia/cuda:13.0.3-base-ubuntu24.04@sha256:97d085a7423ee18ec483a2878b9be2c976dc4ba908aef96518beb00e1899dcc4
+  BASE_ARM64: nvidia/cuda:13.0.3-base-ubuntu24.04@sha256:56d9d8183e2181a20be6b0d3801d1f056a0e75c17706df939ba207b126e1cb9c
+
+jobs:
+  build:
+    name: build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Free disk space (image unpacks to ~16 GB)
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost /usr/share/swift /usr/local/.ghcup /opt/microsoft || true
+          sudo docker image prune --all --force || true
+          sudo apt-get clean || true
+          df -h /
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: runtime/Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            BASE_IMAGE=${{ matrix.arch == 'amd64' && env.BASE_AMD64 || env.BASE_ARM64 }}
+            RELEASE_ID=rc-policy-${{ env.TAG }}
+            IMAGE_REPOSITORY=${{ env.IMAGE }}
+            IMAGE_TAG=${{ env.TAG }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # No layer cache on purpose: the pip layer alone is several GB and a GHA cache would
+          # evict itself against the 10 GB per-repo limit; a cold build is the reproducible one.
+          provenance: false
+          no-cache: true
+
+      - name: Disk after build
+        if: always()
+        run: df -h /
+
+      - name: Record digest
+        run: |
+          mkdir -p out
+          echo "${{ steps.build.outputs.digest }}" > "out/digest-${{ matrix.arch }}.txt"
+
+      - name: Release inventory from the pushed image
+        run: |
+          docker run --rm --entrypoint python \
+            "${IMAGE}@${{ steps.build.outputs.digest }}" \
+            -I /opt/rc/tools/rc_release.py packages > "out/packages.${{ matrix.arch }}.json"
+          docker run --rm --entrypoint python \
+            "${IMAGE}@${{ steps.build.outputs.digest }}" \
+            -I /opt/rc/tools/rc_release.py reserved > "out/reserved.${{ matrix.arch }}.json"
+          python3 -c "import json,sys; print(len(json.load(open('out/packages.${{ matrix.arch }}.json'))), 'entries/keys')" || true
+          df -h /
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-${{ matrix.arch }}
+          path: out/
+          if-no-files-found: error
+
+  merge:
+    name: multi-arch manifest
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: build-*
+          path: out
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and per-arch tags
+        run: |
+          set -euo pipefail
+          AMD=$(cat out/digest-amd64.txt); ARM=$(cat out/digest-arm64.txt)
+          docker buildx imagetools create -t "${IMAGE}:${TAG}" "${IMAGE}@${AMD}" "${IMAGE}@${ARM}"
+          docker buildx imagetools create -t "${IMAGE}:${TAG}-amd64" "${IMAGE}@${AMD}"
+          docker buildx imagetools create -t "${IMAGE}:${TAG}-arm64" "${IMAGE}@${ARM}"
+          docker buildx imagetools inspect "${IMAGE}:${TAG}" | tee out/inspect.txt
+          docker buildx imagetools inspect --format '{{json .Manifest}}' "${IMAGE}:${TAG}" > out/manifest.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-inputs
+          path: out/
