@@ -1,0 +1,10 @@
+# Layer slices of the hashed lock, ordered from least- to most-frequently changing. Each line is
+# "<slice>: <package-name patterns>" (fnmatch on the normalised name: lowercase, runs of -_. -> -).
+# The LAST slice must be "*" (everything not listed). tools/split_lock.py writes
+# locks/requirements.<arch>.<slice>.txt from locks/requirements.<arch>.txt; make-locks.sh runs it,
+# tests/test_split_lock.py proves the slices are up to date and their union is the full lock.
+# Slice names are the Dockerfile layer order; do not reorder without updating the Dockerfile.
+s1-cuda-torch: nvidia-* torch torchvision torchaudio torchcodec triton
+s2-jax: jax jaxlib jax-cuda13-* cupy-cuda13x numba llvmlite
+s3-biglibs: onnxruntime-gpu bitsandbytes opencv-contrib-python-headless open3d casadi pyarrow polars-runtime-32 dm-control drake cmeel-boost av mujoco* numpy scipy pandas sympy scikit-learn scikit-image pillow ml-dtypes
+s4-rest: *

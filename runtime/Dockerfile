@@ -46,10 +46,29 @@ ENV PATH=/opt/venv/bin:$PATH \
     VIRTUAL_ENV=/opt/venv \
     PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# 1. The stack: exact hashed pins, binary wheels only, no dependency resolution at build.
-COPY runtime/locks/requirements.${TARGETARCH}.txt /tmp/requirements.txt
-RUN pip install --only-binary=:all: --no-deps --require-hashes -r /tmp/requirements.txt \
-    && rm /tmp/requirements.txt
+COPY runtime/tools/trim_site_packages.sh /opt/rc/trim_site_packages.sh
+
+# 1. The stack: exact hashed pins, binary wheels only, no dependency resolution at build, in four
+#    layers ordered from least to most frequently changing (locks/slices.txt; the slice files are
+#    generated from the full lock by tools/split_lock.py and tested to partition it exactly, so the
+#    installed set is the full lock). A lock change then re-pushes only the slices it touches.
+#    --no-compile: pip's .pyc would be ignored anyway (PYTHONPYCACHEPREFIX) and cost image bytes.
+#    Trims (runtime/README.md, "Size trims") run in the same RUN so the layer really shrinks.
+COPY runtime/locks/requirements.${TARGETARCH}.s1-cuda-torch.txt /tmp/lock.txt
+RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /tmp/lock.txt \
+    && rm /tmp/lock.txt && sh /opt/rc/trim_site_packages.sh triton-cupti
+
+COPY runtime/locks/requirements.${TARGETARCH}.s2-jax.txt /tmp/lock.txt
+RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /tmp/lock.txt \
+    && rm /tmp/lock.txt
+
+COPY runtime/locks/requirements.${TARGETARCH}.s3-biglibs.txt /tmp/lock.txt
+RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /tmp/lock.txt \
+    && rm /tmp/lock.txt && sh /opt/rc/trim_site_packages.sh tests numpy scipy pandas sympy sklearn
+
+COPY runtime/locks/requirements.${TARGETARCH}.s4-rest.txt /tmp/lock.txt
+RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /tmp/lock.txt \
+    && rm /tmp/lock.txt && sh /opt/rc/trim_site_packages.sh pycache
 
 # 1b. The one sdist-only pin (antlr4-python3-runtime 4.9.3, required by omegaconf/hydra; pure
 #     python, no compiler involved): built from the hash-checked sdist. Everything else above is
@@ -76,16 +95,20 @@ os.symlink(root + "/lib", dst + "/lib64")
 os.symlink(root + "/nvvm/libdevice", dst + "/libdevice")
 PY
 
-# 2. SDK and loader into site-packages (not editable, not importable from /submission).
+# 2. Baked backbone checkpoints (read-only at run time): TORCH_HOME=/opt/rc/torch. Placed before the
+#    code so a code-only release does not rebuild or re-push this 220 MB layer; it depends only on
+#    bake_weights.py and the torchvision pin.
+COPY runtime/tools/bake_weights.py /opt/rc/tools/bake_weights.py
+RUN mkdir -p /opt/rc/torch && TORCH_HOME=/opt/rc/torch python /opt/rc/tools/bake_weights.py \
+    && chmod -R a+rX /opt/rc
+
+# 3. The frequently changing small layers: SDK and loader into site-packages (not editable, not
+#    importable from /submission), then the release tools.
 COPY starter/rc_sdk /tmp/build/rc_sdk
 COPY runtime/pyproject.toml /tmp/build/runtime/pyproject.toml
 COPY runtime/rc_runtime /tmp/build/runtime/rc_runtime
 RUN pip install --no-deps /tmp/build/rc_sdk /tmp/build/runtime && rm -rf /tmp/build
-
-# 3. Baked backbone checkpoints (read-only at run time): TORCH_HOME=/opt/rc/torch.
-COPY runtime/tools/bake_weights.py runtime/tools/rc_release.py runtime/numeric_formats.json /opt/rc/tools/
-RUN mkdir -p /opt/rc/torch && TORCH_HOME=/opt/rc/torch python /opt/rc/tools/bake_weights.py \
-    && chmod -R a+rX /opt/rc
+COPY runtime/tools/rc_release.py runtime/numeric_formats.json /opt/rc/tools/
 
 # 4. Build-time release.json (reserved modules + inventory for THIS arch). It cannot contain
 #    its own image digest, so it is written --partial; the published copy adds the digests.
@@ -123,6 +146,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CUDA_CACHE_PATH=/scratch/cuda \
     NUMBA_CACHE_DIR=/scratch/numba \
     MPLCONFIGDIR=/scratch/mpl \
+    YOLO_CONFIG_DIR=/scratch/yolo \
+    YOLO_OFFLINE=1 \
+    YOLO_AUTOINSTALL=0 \
     TMPDIR=/scratch/tmp \
     XLA_PYTHON_CLIENT_PREALLOCATE=false \
     KERAS_BACKEND=jax \

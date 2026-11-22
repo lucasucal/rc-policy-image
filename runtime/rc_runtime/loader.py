@@ -6,6 +6,7 @@ Nothing here reads team-controlled environment variables.
 
 from __future__ import annotations
 
+import ast
 import errno
 import importlib
 import importlib.machinery
@@ -287,6 +288,43 @@ def top_level_names(directory: Path) -> set[str]:
     return names
 
 
+# Same rule as checks/rc_checks (imports.NON_RUNTIME_DIRS): these directories collide with stray image
+# modules all the time and are never run by a policy, so a shadow is only worth a warning when other
+# code in the submission actually imports the name.
+NON_RUNTIME_DIRS = frozenset({"tests", "test", "examples", "docs", "scripts", "cuda", "benchmarks",
+                              "notebooks", "assets"})
+_NON_RUNTIME_FILES = frozenset({"conftest.py", "setup.py", "noxfile.py", "fabfile.py"})
+_SCAN_LIMIT = 3000  # .py files; bounded so a huge vendored tree cannot slow startup
+
+
+def _imported_by_code(root: Path, name: str, entry_module: Optional[str]) -> bool:
+    """True when a runtime .py file under ``root`` (not ``name`` itself) imports top-level ``name``."""
+    scanned = 0
+    for current, dirs, files in os.walk(root):
+        rel = Path(current).relative_to(root).parts
+        dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x != "__pycache__"
+                         and x not in NON_RUNTIME_DIRS and not (not rel and x == name))
+        for f in sorted(files):
+            if not f.endswith(".py") or f in _NON_RUNTIME_FILES or f.startswith("test_") \
+                    or f.endswith("_test.py") or (not rel and f == name + ".py"):
+                continue
+            scanned += 1
+            if scanned > _SCAN_LIMIT:
+                return True  # cannot tell cheaply: keep the warning
+            try:
+                tree = ast.parse((Path(current) / f).read_text(encoding="utf-8", errors="replace"))
+            except (SyntaxError, ValueError, OSError):
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    if any(a.name.split(".", 1)[0] == name for a in node.names):
+                        return True
+                elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                    if node.module.split(".", 1)[0] == name:
+                        return True
+    return False
+
+
 def warn_image_collisions(directories: Iterable[str], reserved: Iterable[str],
                           entry_module: Optional[str] = None) -> list[str]:
     """Print a warning for each submission top-level module that the image shadows.
@@ -300,6 +338,8 @@ def warn_image_collisions(directories: Iterable[str], reserved: Iterable[str],
     for d in directories:
         for name in sorted(top_level_names(Path(d))):
             if name in reserved and name != entry_top and name not in hits:
+                if name in NON_RUNTIME_DIRS and not _imported_by_code(Path(d), name, entry_module):
+                    continue
                 hits.append(name)
                 print(f"[rc_runtime] WARNING: {d}/{name} has the same name as a module in the "
                       f"pinned image; the image's {name!r} is used and your copy is ignored. "

@@ -1871,6 +1871,7 @@ httpx==0.28.1 \
     #   diffusers
     #   huggingface-hub
     #   trimesh
+    #   ultralytics-platform
 huggingface-hub==1.33.0 \
     --hash=sha256:04e434b06e100eddbce9a6e817d72693a7884b10a79bd67ab48080d5c07eb899 \
     --hash=sha256:367be21a201db9523eddf8aeac7048f2602c1b308691c97640d5e72ed188007e
@@ -2936,6 +2937,7 @@ matplotlib==3.11.2 \
     #   pytransform3d
     #   spatialmath-python
     #   supervision
+    #   ultralytics
 mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
     --hash=sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba
@@ -3672,6 +3674,7 @@ numpy==2.2.6 \
     #   onnxruntime-gpu
     #   open3d
     #   opencv-contrib-python-headless
+    #   opencv-python
     #   opencv-python-headless
     #   optax
     #   orbax-checkpoint
@@ -3703,6 +3706,8 @@ numpy==2.2.6 \
     #   transforms3d
     #   treescope
     #   trimesh
+    #   ultralytics
+    #   ultralytics-thop
     #   vhacdx
     #   viser
     #   webdataset
@@ -3846,6 +3851,10 @@ nvidia-cusparselt-cu13==0.8.1 \
     --hash=sha256:786ce87568c303fadb5afcc7102d454cd3040d75f6f8626f5db460d1871f4dd0 \
     --hash=sha256:dccbd362f91a7b9024d1f55ee9f548ac065027ff15d8c8b0db889ab3a8f31215
     # via torch
+nvidia-ml-py==13.615.71 \
+    --hash=sha256:959bf4adf6fe1308e4bd739e722236b0d1ec8392e2cefad33ff70c311380b9b6 \
+    --hash=sha256:bebe4e48f51b1dc75028c0815cb7bfa14a31a5bb80be70c9d980c6036953fc3d
+    # via ultralytics
 nvidia-nccl-cu13==2.30.7 \
     --hash=sha256:ca786ffa5a647c75d4d1f5cc72a6c4f537947e2ba8823d7c8aaf768e7a7b9f77 \
     --hash=sha256:cefa7fdb9710efd0f39c5f1be1d61ff6fc9a996c451265bd7fbdcf9455ed4b50
@@ -4340,6 +4349,7 @@ pillow==13.0.0 \
     #   tensorboard
     #   torchvision
     #   trimesh
+    #   ultralytics
 pin==4.1.0 \
     --hash=sha256:0d702e922c39de90e7fe6dcbb3a854f6214bae5cbbf68616ee12735bf5fb752b \
     --hash=sha256:1e8b476b7de8a6d709a48b272821c44ad8eeb3b1044d2cb702d19e0702be4b32 \
@@ -4401,7 +4411,9 @@ plyfile==1.1.5 \
 polars==2.1.0 \
     --hash=sha256:63c50ce3533f5a03d17c3a2a24f1d0e0c7eda98fbde4268a3cba900d34060e67 \
     --hash=sha256:9eee488d6e10773c028753dfc8dac647fd60a708108dcb818a733e85d33df253
-    # via -r requirements.in
+    # via
+    #   -r requirements.in
+    #   ultralytics
 polars-runtime-32==2.1.0 \
     --hash=sha256:04cfc3db1571b74ea4145944de7feceed4bfc9b26e5b2c265e27ad3b2d3866a9 \
     --hash=sha256:0af30dd53a7725f703d0d21dd421a39e0165378bfaa41431008f286608376d71 \
@@ -4613,6 +4625,7 @@ psutil==7.2.2 \
     #   orbax-checkpoint
     #   peft
     #   torch-geometric
+    #   ultralytics
     #   viser
 pyarrow==26.0.1 \
     --hash=sha256:0044cb9303c3ae082cc52a2493312109c955bcfa84e87be768736f7d6d8f6257 \
@@ -5269,6 +5282,7 @@ requests==2.34.2 \
     #   supervision
     #   tiktoken
     #   torch-geometric
+    #   ultralytics
 requests-oauthlib==2.0.0 \
     --hash=sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36 \
     --hash=sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9
@@ -6383,6 +6397,8 @@ torch==2.14.1 \
     #   timm
     #   torchaudio
     #   torchvision
+    #   ultralytics
+    #   ultralytics-thop
 torch-geometric==2.8.1 \
     --hash=sha256:3d4431567fcf4865a29cfec25c52484382dd38fd46a45fb4f9d473545d64b812 \
     --hash=sha256:b628de243c0893f3435b6eca9a7bbc07f3219293ed27c974b8929aaae42e65d0
@@ -6447,6 +6463,7 @@ torchvision==0.29.1 \
     #   lerobot
     #   open-clip-torch
     #   timm
+    #   ultralytics
 tqdm==4.70.1 \
     --hash=sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73 \
     --hash=sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4
@@ -6575,6 +6592,18 @@ tzdata==2026.6 \
     # via
     #   pandas
     #   python-dateutil
+ultralytics==8.4.216 \
+    --hash=sha256:0f143e9f7c35a8605be0824d8d6d090e9a74e2b667d67f099d4179c1e9d0127d \
+    --hash=sha256:af5f431d85c4e30a28bc0e6a0d926c8d6077754baad625babcee15d73f0d147e
+    # via -r requirements.in
+ultralytics-platform==0.1.120 \
+    --hash=sha256:364e0fc69ab5bd059264f0f5ca1d4ee640aebbcbbef7b18ccfd5b8919594b602 \
+    --hash=sha256:cf2e5f2bb541e90f8383b5ec208dcf351dde4c7df3fab782e1b30fb8f76c6a94
+    # via ultralytics
+ultralytics-thop==2.2.5 \
+    --hash=sha256:a698003b42de578731ba51c747031914bba8775f47fe675dbbf28510f0c2654d \
+    --hash=sha256:ad2ed5b829497b541cdf3b1aaa0dc82c468ad5eb77ba8a999f84e31da1b70984
+    # via ultralytics
 urllib3==2.8.0 \
     --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
     --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63

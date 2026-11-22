@@ -31,13 +31,20 @@ class _Handler(BaseHTTPRequestHandler):
     def _send_json(self, status: int, body: Dict[str, Any],
                    extra_headers: Optional[Dict[str, str]] = None) -> None:
         payload = json.dumps(body).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        for k, v in (extra_headers or {}).items():
-            self.send_header(k, v)
-        self.end_headers()
-        self.wfile.write(payload)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            for k, v in (extra_headers or {}).items():
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError) as exc:
+            # The runner closed the connection (budget cut, step limit) before the response was
+            # written. Expected, not an error: one line instead of a socketserver traceback.
+            self.close_connection = True
+            print(f"[rc_runtime] client closed the connection before the {status} response "
+                  f"to {self.command} {self.path} ({type(exc).__name__})", flush=True)
 
     def do_GET(self) -> None:
         if self.path == "/healthz":
