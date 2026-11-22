@@ -44,7 +44,8 @@ ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
 
 ENV PATH=/opt/venv/bin:$PATH \
     VIRTUAL_ENV=/opt/venv \
-    PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 COPY runtime/tools/trim_site_packages.sh /opt/rc/trim_site_packages.sh
 
@@ -56,7 +57,8 @@ COPY runtime/tools/trim_site_packages.sh /opt/rc/trim_site_packages.sh
 #    Trims (runtime/README.md, "Size trims") run in the same RUN so the layer really shrinks.
 COPY runtime/locks/requirements.${TARGETARCH}.s1-cuda-torch.txt /tmp/lock.txt
 RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /tmp/lock.txt \
-    && rm /tmp/lock.txt && sh /opt/rc/trim_site_packages.sh triton-cupti
+    && rm /tmp/lock.txt && sh /opt/rc/trim_site_packages.sh triton-cupti \
+    && sh /opt/rc/trim_site_packages.sh stray-example
 
 COPY runtime/locks/requirements.${TARGETARCH}.s2-jax.txt /tmp/lock.txt
 RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /tmp/lock.txt \
@@ -64,7 +66,7 @@ RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /
 
 COPY runtime/locks/requirements.${TARGETARCH}.s3-biglibs.txt /tmp/lock.txt
 RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /tmp/lock.txt \
-    && rm /tmp/lock.txt && sh /opt/rc/trim_site_packages.sh tests numpy scipy pandas sympy sklearn
+    && rm /tmp/lock.txt
 
 COPY runtime/locks/requirements.${TARGETARCH}.s4-rest.txt /tmp/lock.txt
 RUN pip install --only-binary=:all: --no-compile --no-deps --require-hashes -r /tmp/lock.txt \

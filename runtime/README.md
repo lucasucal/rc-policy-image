@@ -39,7 +39,6 @@ Each runs in the same `RUN` as the install that created the files, via `tools/tr
 | Trim | Why it is safe |
 |---|---|
 | `triton/backends/nvidia/lib/cupti` and `cupti-blackwell` (CUPTI `.so` copies and two 48 MB `libcupti_static.a`, about 207 MB unpacked) | Only referenced by `triton/knobs.py` (`cupti_lib_dir`) and `triton/profiler` (the proton profiler). Compilation and kernel launch use `ptxas`, `libdevice.10.bc`, `include/` and `driver.c`, all kept. The CUDA runtime's own CUPTI (`nvidia-cuda-cupti`) is untouched, so `torch.profiler` still works. Triton's profiler (`triton.profiler`) no longer works; nothing in the rules uses it |
-| `tests/` directories inside `numpy`, `scipy`, `pandas`, `sympy`, `sklearn` only | Test suites of those packages; none is imported at run time. `numpy.testing`, `torch.testing`, `pandas._testing` are different names and stay. Other packages are deliberately not touched (some import from their `tests` package) |
 | `pip install --no-compile` and a `__pycache__` sweep after the last slice | `PYTHONPYCACHEPREFIX=/scratch/pycache` makes Python ignore in-tree `.pyc`, so baked ones are never used |
 | `/root/.cache`, `/tmp/pip-*` | pip leftovers (`PIP_NO_CACHE_DIR=1` already) |
 
@@ -102,3 +101,8 @@ See `docs/verification/spark-image-arm64.md`: the arm64 image builds from the lo
 
 - `huggingface_hub` is `>=1.32,<2` (locked 1.33.0), not 2.4.0: LeRobot 0.7.0 caps `diffusers<0.40`, and diffusers 0.38/0.39 require `huggingface-hub<2`. The base cache tool tests pass with both 1.33.0 (locked) and 2.4.0.
 - `rc_runtime --selfcheck` exit codes: `71` (new) for import/resolve failures; 70/72 as in the contract.
+
+Removed in v9: v8 also deleted `tests/` directories inside numpy, scipy, pandas, sympy and scikit-learn.
+`numpy.testing` imports `numpy._core.tests._natype`, so scipy, keras and LeRobot failed to import.
+Package test directories are no longer trimmed, and the CI build now runs an import check before
+tagging (see `ci/build-image.yml`).

@@ -74,6 +74,11 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             envelope = json.loads(self.rfile.read(length) or b"{}")
+        except (BrokenPipeError, ConnectionResetError) as exc:
+            self.close_connection = True
+            print(f"[rc_runtime] client closed the connection while sending the request body "
+                  f"of {self.command} {self.path} ({type(exc).__name__})", flush=True)
+            return
         except (ValueError, json.JSONDecodeError) as exc:
             self._send_json(400, {"error": f"invalid JSON body: {exc}"})
             return

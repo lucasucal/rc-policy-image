@@ -62,6 +62,11 @@ def _top_name(entry: str) -> Optional[str]:
     return name if MODULE_RE.match(name) else None
 
 
+# Top-level files some wheels ship by mistake (nvidia-ml-py's example.py). Not reserved unless the
+# distribution declares them in top_level.txt, so a team module with such a name is not rejected.
+STRAY_NAMES = {"example", "examples", "test", "tests", "conftest"}
+
+
 def reserved_modules(dirs: Optional[Iterable[str]] = None) -> list[str]:
     """Top-level importable names found in site-packages (dirs, modules, extensions).
 
@@ -79,7 +84,7 @@ def reserved_modules(dirs: Optional[Iterable[str]] = None) -> list[str]:
                 if not has_py:
                     continue
             n = _top_name(entry)
-            if n:
+            if n and n not in STRAY_NAMES:
                 names.add(n)
     if dirs is None:
         for dist in md.distributions():

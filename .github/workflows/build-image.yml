@@ -97,6 +97,28 @@ jobs:
           mkdir -p out
           echo "${{ steps.build.outputs.digest }}" > "out/digest-${{ matrix.arch }}.txt"
 
+      - name: Import check (fails the build before any tag is created)
+        run: |
+          docker run --rm --network none --user 10001 --read-only --tmpfs /scratch:exec --tmpfs /tmp \
+            -e TMPDIR=/scratch --entrypoint python \
+            "${IMAGE}@${{ steps.build.outputs.digest }}" -I -c "
+          import importlib, sys
+          mods = ['numpy', 'numpy.testing', 'scipy', 'scipy.stats', 'pandas', 'sklearn', 'sympy',
+                  'torch', 'torchvision', 'torchaudio', 'triton', 'jax', 'flax', 'keras', 'transformers',
+                  'diffusers', 'lerobot', 'lerobot.policies.smolvla.modeling_smolvla', 'lerobot.policies.act.modeling_act',
+                  'cv2', 'open3d', 'mujoco', 'dm_control', 'onnxruntime', 'cupy', 'numba', 'bitsandbytes',
+                  'ultralytics', 'datasets', 'pyarrow', 'timm', 'open_clip', 'sentence_transformers',
+                  'torch_geometric', 'pydrake', 'fastapi', 'uvicorn', 'flask', 'rc_runtime', 'rc_sdk']
+          bad = []
+          for m in mods:
+              try:
+                  importlib.import_module(m)
+              except Exception as e:
+                  bad.append(f'{m}: {type(e).__name__}: {e}')
+          print('\\n'.join(bad) or 'all imports ok')
+          sys.exit(1 if bad else 0)
+          "
+
       - name: Release inventory from the pushed image
         run: |
           docker run --rm --entrypoint python \
