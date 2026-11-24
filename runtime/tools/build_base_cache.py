@@ -277,7 +277,9 @@ def build_cache(entries: list[dict], out_dir: Path, fetcher: Fetcher, version: O
 
 def verify_cache(cache_dir: Path) -> list[str]:
     """Structural verification. Returns problems (empty = ok)."""
-    cache_dir = Path(cache_dir)
+    # Blob containment compares fully resolved symlink targets, so the root must be resolved too
+    # (a relative or symlinked cache_dir would otherwise never match).
+    cache_dir = Path(cache_dir).resolve()
     errs: list[str] = []
     try:
         manifest = json.loads((cache_dir / "CACHE_MANIFEST.json").read_text())

@@ -71,6 +71,30 @@ Release:
 3. The workflow builds both architectures without layer cache (the pip layer is several GB and would not fit the 10 GB cache limit), pushes each by digest, creates `ghcr.io/lucasucal/rc-policy:v6` plus `:v6-amd64` / `:v6-arm64`, prints `imagetools inspect`, and uploads artifacts: `build-<arch>` (`digest-<arch>.txt`, `packages.<arch>.json`, `reserved.<arch>.json`) and `release-inputs` (digests, `manifest.json`). Use them for `rc_release.py write` (step 4 above) and commit `runtime/release.json`.
 4. One-time: the package `rc-policy` must grant the mirror repo write access (package settings, Manage Actions access, Add repository, Write); this is done, and the workflow publishes to `ghcr.io/lucasucal/rc-policy`. Build args match the Spark builds (per-arch base digests, `RELEASE_ID=rc-policy-<tag>`, `IMAGE_TAG=<tag>`); the baked `release.json` is `--partial` as before.
 
+### Release checklist (next: v10)
+
+v10 differs from v9 only in `tools/rc_release.py`: stray `top_level.txt` names that are not importable are no longer reserved, so `example` drops out (issue #34). The baked `/opt/rc/release.json` (read by the loader) and the CI `reserved.<arch>.json` (used by the backend) come from the same generator, so both change together. Commands assume `T=v10`, `IMG=ghcr.io/lucasucal/rc-policy`.
+
+1. Laptop: from the commit to release, `runtime/tools/sync_build_repo.sh ../rc-policy-image --tag $T`, review the mirror diff (only `runtime/tools/rc_release.py` for v10), then `git -C ../rc-policy-image push origin main $T`. Needs push access to `lucasucal/rc-policy-image`.
+2. CI (mirror repo): wait for the `build-image` run. Then on the laptop:
+   `RUN=$(gh run list -R lucasucal/rc-policy-image -b $T -L 1 --json databaseId -q '.[0].databaseId'); gh run download $RUN -R lucasucal/rc-policy-image -n build-arm64 -n build-amd64 -n release-inputs -D /tmp/rc-$T` (one subdirectory per artifact: `build-arm64/`, `build-amd64/`, `release-inputs/`). `A=/tmp/rc-$T`
+3. Laptop: check the inventory before writing anything.
+   `diff $A/build-arm64/reserved.arm64.json $A/build-amd64/reserved.amd64.json` (must be empty);
+   `python3 -c "import json,sys; old=set(json.load(open('docs/verification/release.v9.json'))['reserved_modules']); new=set(json.load(open(sys.argv[1]))); print('removed', sorted(old-new), 'added', sorted(new-old))" $A/build-arm64/reserved.arm64.json`
+   (expected: `removed ['example']`, possibly also `tests`; anything else needs an explanation).
+   Manifest digest: `jq -r .digest $A/release-inputs/manifest.json` (equals the top-level `Digest:` of `docker buildx imagetools inspect $IMG:$T`); config digests: `docker buildx imagetools inspect --raw $IMG@<platform digest>` then the `config.digest` field.
+4. Laptop: write and validate. Use Python 3.12: `write` copies `stdlib_module_names` from the interpreter it runs on.
+   `python3.12 runtime/tools/rc_release.py write -o runtime/release.json --release-id rc-policy-$T --repository $IMG --tag $T --manifest-digest sha256:... --platform-digest linux/arm64=$(cat $A/build-arm64/digest-arm64.txt) --platform-digest linux/amd64=$(cat $A/build-amd64/digest-amd64.txt) --config-digest linux/arm64=sha256:... --config-digest linux/amd64=sha256:... --packages linux/arm64=$A/build-arm64/packages.arm64.json --packages linux/amd64=$A/build-amd64/packages.amd64.json --reserved $A/build-arm64/reserved.arm64.json --python-version 3.12.3 [--base-cache CACHE_MANIFEST.json] [--docs-url ...]`
+   `python3 runtime/tools/rc_release.py validate runtime/release.json && cp runtime/release.json docs/verification/release.$T.json`
+5. Laptop: `python -m pytest checks/rc_checks/tests runtime/tests -q`. With `runtime/release.json` present, `test_committed_release_accepts_example_module` runs and fails if `example` is still reserved.
+6. Spark (arm64, before cutover): pull by the manifest digest, confirm the platform digest, and check the loader with a team module named `example`:
+   `docker pull $IMG@<manifest digest> && docker image inspect $IMG@<arm64 platform digest> >/dev/null`
+   `docker run --rm --entrypoint python $IMG@<arm64 platform digest> -I -c "import json; print('example' in json.load(open('/opt/rc/release.json'))['reserved_modules'])"` (must print `False`)
+   With a submission dir holding `manifest.json` (`{"contract":"v0","entry_point":"example.policy:P"}`), `example/__init__.py` and an `example/policy.py` defining an `rc_sdk.Policy` subclass `P` (`chmod -R a+rX $SUB`):
+   `docker run --rm --network none --read-only --user 10001 --cap-drop ALL --security-opt no-new-privileges --tmpfs /scratch:exec --tmpfs /tmp -e TMPDIR=/scratch --mount type=bind,src=$SUB,dst=/submission,readonly $IMG@<arm64 platform digest> --selfcheck` (must print `"ok": true` and exit 0; v9 exits 72 `reserved_module_shadow`)
+   Then rerun the v9 regression matrix (`docs/verification/v9-validation.md`) and record it as `docs/verification/$T-validation.md`.
+7. Commit `runtime/release.json` and `docs/verification/release.$T.json`. The deploy workflow rebuilds the backend image because `runtime/release.json` is in its path hash. Set `RC_POLICY_IMAGE=$IMG@<manifest digest>` on every Spark runner, then follow the cutover checklist in `contestants/ORGANIZERS.md`.
+
 ## Verified here (x86-64 CPU, no Docker daemon, no GPU)
 
 Loader/server unit and contract tests, release schema validation, cache layout and `huggingface_hub` 2.4.0 offline resolution from a read-only directory without writes, `uv` resolution of the full stack for both architectures with identical pins.

@@ -19,7 +19,7 @@ from .loader import RuntimeStartupError
 
 CONTRACT = "v0"
 SCHEMA_VERSION = 2
-CAPABILITIES = {"chunking": False, "caching": False}
+CAPABILITIES = {"chunking": True, "caching": False}
 
 
 class _Handler(BaseHTTPRequestHandler):

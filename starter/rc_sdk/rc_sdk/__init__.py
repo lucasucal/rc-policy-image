@@ -6,7 +6,7 @@ write a tiny Policy subclass instead of raw HTTP handling.
 Contract rules encoded here:
 - GET /healthz -> 200 {} immediately on start (LIVENESS ONLY, before weights load).
 - GET /readyz  -> 200 {"ready": bool, "contract": "v0", "schema_version": 2,
-                       "capabilities": {"chunking": false, "caching": false}}
+                       "capabilities": {"chunking": true, "caching": false}}
                   ready flips true after Policy.load() finishes (background thread).
 - POST /act    -> request envelope {episode_id, step, task_id, instruction?, goal?,
                   images?, proprio?}; instruction is the natural-language

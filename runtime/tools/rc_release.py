@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import importlib.metadata as md
+import importlib.util
 import json
 import os
 import re
@@ -92,7 +93,14 @@ def reserved_modules(dirs: Optional[Iterable[str]] = None) -> list[str]:
                 top = dist.read_text("top_level.txt") or ""
             except Exception:
                 top = ""
-            names.update(t.strip() for t in top.splitlines() if MODULE_RE.match(t.strip()))
+            for t in (t.strip() for t in top.splitlines()):
+                if not MODULE_RE.match(t):
+                    continue
+                # A stray name declared in top_level.txt whose file was removed (nvidia-ml-py's
+                # example.py) is not importable, so it must not block a team module of that name.
+                if t in STRAY_NAMES and importlib.util.find_spec(t) is None:
+                    continue
+                names.add(t)
     names.update({"rc_sdk", "rc_runtime"})
     return sorted(names)
 

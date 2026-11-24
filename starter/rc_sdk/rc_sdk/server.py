@@ -14,7 +14,7 @@ from .policy import Policy
 
 CONTRACT = "v0"
 SCHEMA_VERSION = 2  # observation/action schema v2 (UR12e, 6 arm joints)
-CAPABILITIES = {"chunking": False, "caching": False}
+CAPABILITIES = {"chunking": True, "caching": False}
 
 
 def load_manifest(path: str) -> Dict[str, Any]:
