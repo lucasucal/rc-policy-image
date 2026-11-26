@@ -1,6 +1,7 @@
 """Policy base class — subclass this and swap in your model.
 
-Schema v2: 6 arm `joint_delta` values (|Δq| ≤ 0.05 rad) plus gripper in [0, 1].
+Schema v2: 6 arm `joint_delta` values (|Δq| ≤ 0.10472 rad base and shoulder, 0.15708 rad elbow and wrists)
+plus gripper in [0, 1].
 """
 
 from typing import Any, Dict

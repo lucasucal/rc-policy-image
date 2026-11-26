@@ -352,8 +352,8 @@ _NET_MARKERS = ("huggingface.co", "name resolution", "name or service not known"
                 "could not connect", "max retries exceeded", "offline mode",
                 "outgoing traffic has been disabled", "connection refused",
                 "temporary failure", "connection error")
-_NET_HINT = ("no network at runtime; load files from /weights (your snapshot) or /hf-base "
-             "(curated base models)")
+_NET_HINT = ("no network at runtime; load every file from /weights (your Hugging Face "
+             "snapshot), not by hub id")
 _ROFS_HINT = "the filesystem is read-only; write under /scratch (TMPDIR is /scratch/tmp)"
 
 

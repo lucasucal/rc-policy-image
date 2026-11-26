@@ -9,7 +9,7 @@ Subcommands (run `reserved` and `packages` inside the image, once per architectu
         --manifest-digest sha256:.. --platform-digest linux/arm64=sha256:.. \
         --platform-digest linux/amd64=sha256:.. [--config-digest PLAT=sha256:..] \
         --packages linux/arm64=packages.arm64.json --packages linux/amd64=packages.amd64.json \
-        [--reserved reserved.json] [--base-cache CACHE_MANIFEST.json] [--partial]
+        [--reserved reserved.json] [--partial]
   rc_release.py validate release.json
 
 Schema: docs/runtime-interfaces.md section 2 (version 1). Stdlib only.
@@ -135,7 +135,7 @@ def _kv(items: Iterable[str], what: str) -> dict[str, str]:
 def build_release(*, release_id: str, repository: str, tag: str,
                   manifest_digest: Optional[str], platform_digests: dict, config_digests: dict,
                   packages_by_platform: dict, reserved: list, numeric_formats: list,
-                  base_cache: Optional[dict], docs_url: str = "", created_at: Optional[str] = None,
+                  docs_url: str = "", created_at: Optional[str] = None,
                   python_version: Optional[str] = None,
                   package_status: Optional[dict] = None) -> dict:
     created_at = created_at or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -163,7 +163,6 @@ def build_release(*, release_id: str, repository: str, tag: str,
         "reserved_modules": sorted(set(reserved)),
         "packages": packages,
         "numeric_formats": numeric_formats,
-        "base_cache": base_cache,
         "docs_url": docs_url,
     }
     return release
@@ -229,15 +228,9 @@ def validate_release(r: object, partial: bool = False) -> list[str]:
             if need(isinstance(modal, dict), f"numeric_formats[{row.get('format')}] modal must be an object"):
                 for gpu, cell in modal.items():
                     need(cell in STATUSES, f"numeric_formats[{row.get('format')}] bad modal status {gpu}={cell!r}")
-    bc = r.get("base_cache")
-    if bc is not None and need(isinstance(bc, dict), "base_cache must be an object or null"):
-        need(bc.get("version") is None or isinstance(bc["version"], str), "base_cache.version bad")
-        need(bc.get("sha256") is None or DIGEST_RE.match(str(bc["sha256"])), "base_cache.sha256 bad")
-        ents = bc.get("entries")
-        if need(isinstance(ents, list), "base_cache.entries must be a list"):
-            for e in ents:
-                need(isinstance(e, dict) and isinstance(e.get("repo_id"), str)
-                     and re.fullmatch(r"[0-9a-f]{40}", str(e.get("sha", ""))), f"bad base_cache entry {e!r}")
+    # The curated base cache was removed in v11. Releases up to v10 carry "base_cache": null;
+    # tolerate that, reject anything that still describes a cache.
+    need(r.get("base_cache") is None, "base_cache was removed in v11 (only a legacy null is accepted)")
     return errs
 
 
@@ -259,9 +252,6 @@ def example_release() -> dict:
         config_digests={"linux/arm64": "sha256:" + "d" * 64, "linux/amd64": "sha256:" + "e" * 64},
         packages_by_platform={"linux/arm64": arm, "linux/amd64": amd}, reserved=reserved,
         numeric_formats=_load_json(DEFAULT_NUMERIC_FORMATS),
-        base_cache={"version": "bc-2026.11.21-1", "sha256": "sha256:" + "f" * 64,
-                    "entries": [{"repo_id": "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
-                                 "sha": "0123456789abcdef0123456789abcdef01234567"}]},
         docs_url="https://dashboard.example/docs", python_version="3.12.8")
 
 
@@ -300,7 +290,6 @@ def main(argv: Optional[list] = None) -> int:
     w.add_argument("--package-status", help="JSON {name: {spark:..., modal:...}} overrides")
     w.add_argument("--reserved", help="reserved list JSON (default: generate from this environment)")
     w.add_argument("--numeric-formats", default=str(DEFAULT_NUMERIC_FORMATS))
-    w.add_argument("--base-cache", help="CACHE_MANIFEST.json from build_base_cache.py")
     w.add_argument("--docs-url", default="")
     w.add_argument("--created-at")
     w.add_argument("--python-version")
@@ -323,16 +312,12 @@ def main(argv: Optional[list] = None) -> int:
         pk = {plat: _load_json(path) for plat, path in _kv(a.packages, "--packages").items()}
         if not pk:
             pk = {"linux/arm64" if os.uname().machine in ("aarch64", "arm64") else "linux/amd64": installed_packages()}
-        bc = None
-        if a.base_cache:
-            m = _load_json(a.base_cache)
-            bc = {"version": m.get("version"), "sha256": m.get("sha256"), "entries": m.get("entries", [])}
         release = build_release(
             release_id=a.release_id, repository=a.repository, tag=a.tag,
             manifest_digest=a.manifest_digest, platform_digests=_kv(a.platform_digest, "--platform-digest"),
             config_digests=_kv(a.config_digest, "--config-digest"), packages_by_platform=pk,
             reserved=_load_json(a.reserved) if a.reserved else reserved_modules(),
-            numeric_formats=_load_json(a.numeric_formats), base_cache=bc, docs_url=a.docs_url,
+            numeric_formats=_load_json(a.numeric_formats), docs_url=a.docs_url,
             created_at=a.created_at, python_version=a.python_version,
             package_status=_load_json(a.package_status) if a.package_status else None)
         errs = validate_release(release, partial=a.partial)

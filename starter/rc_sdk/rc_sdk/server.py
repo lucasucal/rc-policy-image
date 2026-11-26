@@ -145,11 +145,11 @@ def main(argv: Optional[list] = None) -> None:
     parser.add_argument("--policy", default="policy.example:ExamplePolicy",
                         help="'module:Class' of your Policy subclass")
     parser.add_argument("--port", type=int, default=None,
-                        help="overrides manifest.json port")
+                        help="overrides manifest.json port (default 8080)")
     args = parser.parse_args(argv)
 
     manifest = load_manifest(args.manifest)
-    port = args.port if args.port is not None else int(manifest["port"])
+    port = args.port if args.port is not None else int(manifest.get("port", 8080))
     policy = import_policy(args.policy)
     server = PolicyServer(port, policy)
     server.start_load()  # healthz answers immediately; readyz flips after load

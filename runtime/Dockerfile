@@ -126,7 +126,7 @@ RUN python /opt/rc/tools/rc_release.py packages -o /tmp/packages.json \
 #    own /tmp, e.g. Modal); the runner mounts a tmpfs there, TMPDIR points into scratch, which the
 #    loader creates at startup.
 RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin rc \
-    && mkdir -p /submission /weights /hf-base /scratch \
+    && mkdir -p /submission /weights /scratch \
     && chmod 1777 /scratch \
     && mkdir -p /tmp && chmod 1777 /tmp
 
@@ -135,7 +135,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOME=/scratch/home \
     HF_HOME=/scratch/hf \
-    HF_HUB_CACHE=/hf-base \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
     HF_DATASETS_OFFLINE=1 \
