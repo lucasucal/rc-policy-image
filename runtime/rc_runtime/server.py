@@ -10,17 +10,14 @@ from __future__ import annotations
 import json
 import threading
 import traceback
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable, Dict, Optional, Tuple
+from http.server import BaseHTTPRequestHandler
+from typing import Any, Callable, Dict, Optional
 
+from rc_sdk.contract import CAPABILITIES, CONTRACT, SCHEMA_VERSION, observation_error
 from rc_sdk.policy import Policy
+from rc_sdk.transport import PolicyHTTPServer
 
 from .loader import RuntimeStartupError
-
-CONTRACT = "v0"
-SCHEMA_VERSION = 2
-CAPABILITIES = {"chunking": True, "caching": False}
-
 
 class _Handler(BaseHTTPRequestHandler):
     server: "RuntimeServer"
@@ -73,40 +70,38 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if length < 0:
+                raise ValueError("Content-Length must be nonnegative")
             envelope = json.loads(self.rfile.read(length) or b"{}")
         except (BrokenPipeError, ConnectionResetError) as exc:
             self.close_connection = True
             print(f"[rc_runtime] client closed the connection while sending the request body "
                   f"of {self.command} {self.path} ({type(exc).__name__})", flush=True)
             return
-        except (ValueError, json.JSONDecodeError) as exc:
+        except ValueError as exc:
             self._send_json(400, {"error": f"invalid JSON body: {exc}"})
             return
-        ok, err, echoed = self._validate_envelope(envelope)
-        if not ok:
-            self._send_json(400, {"error": err})
+        error = observation_error(envelope)
+        if error:
+            self._send_json(400, {"error": error})
             return
-        episode_id, step = echoed
+        episode_id, step = envelope["episode_id"], envelope["step"]
         try:
             action = self.server.policy.act(envelope)
         except Exception as exc:
             self._send_json(500, {"error": f"policy act() failed: {exc}"})
             return
+        try:
+            json.dumps(action)
+        except (TypeError, ValueError) as exc:
+            print(f"[rc_runtime] /act step {step}: action is not JSON-serializable: {exc}", flush=True)
+            self._send_json(500, {"error": f"action is not JSON-serializable: {exc}"})
+            return
         self._send_json(200, {"episode_id": episode_id, "step": step, "action": action},
                         {"X-RC-Episode-Id": str(episode_id), "X-RC-Step": str(step)})
 
-    @staticmethod
-    def _validate_envelope(envelope: Any) -> Tuple[bool, Optional[str], Tuple[Any, Any]]:
-        if not isinstance(envelope, dict):
-            return False, "request body must be a JSON object", (None, None)
-        if "episode_id" not in envelope:
-            return False, "missing required field: episode_id", (None, None)
-        if "step" not in envelope:
-            return False, "missing required field: step", (None, None)
-        return True, None, (envelope["episode_id"], envelope["step"])
 
-
-class RuntimeServer(ThreadingHTTPServer):
+class RuntimeServer(PolicyHTTPServer):
     """ThreadingHTTPServer + background load thread.
 
     ``loader`` returns a fully loaded Policy or raises RuntimeStartupError. Any other
@@ -115,8 +110,8 @@ class RuntimeServer(ThreadingHTTPServer):
 
     daemon_threads = True
 
-    def __init__(self, host: str, port: int, loader: Callable[[], Policy]) -> None:
-        super().__init__((host, port), _Handler)
+    def __init__(self, host: str, port: int, loader: Callable[[], Policy], *, tls_context=None) -> None:
+        super().__init__((host, port), _Handler, tls_context=tls_context)
         self.loader = loader
         self.policy: Optional[Policy] = None
         self.ready = threading.Event()

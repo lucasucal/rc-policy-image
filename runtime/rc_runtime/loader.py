@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
+from rc_sdk.contract import check_manifest_schema
 from rc_sdk.policy import Policy
 
 ENTRY_POINT_RE = re.compile(
@@ -45,6 +46,7 @@ DEFAULT_LISTEN_DEADLINE_SECONDS = 600.0
 
 # /readyz error_code values (contract section 5) -> short fixed /readyz.error string.
 ERROR_MESSAGES = {
+    "policy_schema_incompatible": "class policy manifest must declare schema_version 3",
     "entry_import_failed": "entry point import failed",
     "entry_not_policy": "entry point is not a Policy",
     "entry_factory_failed": "entry point factory failed",
@@ -131,7 +133,7 @@ def parse_entry(value: Any) -> EntrySpec:
     return EntrySpec("module", module=value)
 
 
-def read_manifest_entry_point(submission: Path) -> str:
+def read_manifest(submission: Path) -> dict:
     path = Path(submission) / "manifest.json"
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
@@ -139,10 +141,26 @@ def read_manifest_entry_point(submission: Path) -> str:
         raise RuntimeStartupError(
             "entry_point_invalid", f"cannot read {path}: {type(exc).__name__}",
             EXIT_ENTRY_POINT_INVALID) from exc
-    if not isinstance(manifest, dict) or "entry_point" not in manifest:
+    if not isinstance(manifest, dict):
         raise RuntimeStartupError(
-            "entry_point_invalid", f"{path} has no entry_point", EXIT_ENTRY_POINT_INVALID)
+            "entry_point_invalid", f"{path} must be a JSON object", EXIT_ENTRY_POINT_INVALID)
+    return manifest
+
+
+def read_manifest_entry_point(submission: Path) -> str:
+    manifest = read_manifest(submission)
+    if "entry_point" not in manifest:
+        raise RuntimeStartupError(
+            "entry_point_invalid", "manifest.json has no entry_point", EXIT_ENTRY_POINT_INVALID)
     return manifest["entry_point"]
+
+
+def check_class_schema(submission: Path) -> None:
+    try:
+        check_manifest_schema(read_manifest(submission))
+    except ValueError as exc:
+        raise RuntimeStartupError(
+            "policy_schema_incompatible", str(exc), EXIT_ENTRY_POINT_INVALID) from exc
 
 
 def load_reserved_modules(

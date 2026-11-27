@@ -11,6 +11,9 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+from rc_sdk.contract import CONTRACT, SCHEMA_VERSION
+from rc_sdk.transport import tls_server_context
+
 from . import loader
 from .loader import RuntimeStartupError
 from .server import RuntimeServer
@@ -40,6 +43,7 @@ def _selfcheck(submission: Path, entry_point: str, reserved: frozenset) -> int:
             loader.prepare_program(submission, spec, reserved)
             loader.check_program_resolves(spec)
         else:
+            loader.check_class_schema(submission)
             loader.resolve_entry(submission, entry_point, reserved)
     except RuntimeStartupError as exc:
         print(json.dumps({"ok": False, "error_code": exc.code, "error": exc.detail}), flush=True)
@@ -102,17 +106,25 @@ def run(argv: Optional[list] = None, env: Optional[dict] = None) -> int:
         return _run_program(submission, spec, reserved, port, env)
 
     def load_policy():
+        loader.check_class_schema(submission)
         policy = loader.resolve_entry(submission, entry_point, reserved)
         loader.run_load(policy)
         return policy
 
     try:
-        server = RuntimeServer(args.host, port, load_policy)
+        tls_context = tls_server_context(env)
+    except ValueError as exc:
+        print(f"[rc_runtime] policy TLS configuration error: {exc}", flush=True)
+        return loader.EXIT_INTERNAL
+    try:
+        server = RuntimeServer(args.host, port, load_policy, tls_context=tls_context)
     except OSError as exc:
         print(f"[rc_runtime] cannot bind port {port}: {exc}", flush=True)
         return loader.EXIT_INTERNAL
     server.start_load()
-    print(f"[rc_runtime] serving contract v0 on port {port}", flush=True)
+    transport = "HTTPS" if tls_context else "HTTP"
+    print(f"[rc_runtime] serving {transport} contract {CONTRACT}, schema {SCHEMA_VERSION}, on port {port}",
+          flush=True)
 
     def _stop(signum, frame):
         threading.Thread(target=server.shutdown, daemon=True).start()

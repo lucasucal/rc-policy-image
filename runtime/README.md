@@ -23,6 +23,15 @@ python -m pytest runtime/tests -q
 
 The `-I` test needs `rc_sdk` and `rc_runtime` installed (`pip install ./starter/rc_sdk ./runtime`); it skips otherwise.
 
+## Policy transport
+
+The class server uses HTTP by default. For Whistle, mount the PEM certificate
+chain and private key into the policy container and set `RC_POLICY_TLS_CERT`
+and `RC_POLICY_TLS_KEY` to their mounted paths. Set both variables to enable
+HTTPS on the policy port. A program entry point supplies its own HTTPS server.
+See the [policy API](../docs/api.md#whistle-https-deployment) for client trust,
+the DNS name and certificate rotation.
+
 ## Update the locks
 
 `./runtime/make-locks.sh` (needs `uv`). It resolves for `x86_64` and `aarch64` (manylinux_2_28, Python 3.12) and fails if the pinned versions differ between architectures. Commit the result. It also writes `locks/requirements.sdist.txt` (the one sdist-only pin, `antlr4-python3-runtime`, which the Dockerfile builds from the hash-checked sdist) and strips `docopt` and `embreex`. The wheels' existence is checked by the resolver; it says nothing about GB10 behavior.
