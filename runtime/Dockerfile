@@ -79,6 +79,13 @@ COPY runtime/locks/requirements.sdist.txt /tmp/requirements.sdist.txt
 RUN pip install --no-deps --require-hashes --no-binary=antlr4-python3-runtime -r /tmp/requirements.sdist.txt \
     && rm /tmp/requirements.sdist.txt
 
+# NATTEN's Python-only Flex Attention backend works on both GPU architectures. Build
+# the hash-pinned sdist without a visible GPU to avoid compiling libnatten; the
+# already-installed PyTorch is required by its build script.
+COPY runtime/locks/requirements.natten.txt /tmp/requirements.natten.txt
+RUN CUDA_VISIBLE_DEVICES= pip install --no-build-isolation --no-deps --require-hashes \
+        -r /tmp/requirements.natten.txt && rm /tmp/requirements.natten.txt
+
 # 1c. numba.cuda (KSI-020): numba finds libNVVM only as libnvvm.so.<n> under a CUDA tree
 #     (<root>/nvvm/lib64, <root>/nvvm/libdevice, <root>/lib64 with libcudart); its NUMBA_CUDA_*
 #     variables do not help (tried). The nvidia-nvvm wheel (pinned to the 13.0.x line so its PTX ISA

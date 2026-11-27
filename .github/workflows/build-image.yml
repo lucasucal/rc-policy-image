@@ -104,7 +104,7 @@ jobs:
             "${IMAGE}@${{ steps.build.outputs.digest }}" -I -c "
           import importlib, sys
           mods = ['numpy', 'numpy.testing', 'scipy', 'scipy.stats', 'pandas', 'sklearn', 'sympy',
-                  'torch', 'torchvision', 'torchaudio', 'triton', 'jax', 'flax', 'keras', 'transformers',
+                  'torch', 'torchvision', 'torchaudio', 'triton', 'natten', 'jax', 'flax', 'keras', 'transformers',
                   'diffusers', 'lerobot', 'lerobot.policies.smolvla.modeling_smolvla', 'lerobot.policies.act.modeling_act',
                   'cv2', 'open3d', 'mujoco', 'dm_control', 'onnxruntime', 'cupy', 'numba', 'bitsandbytes',
                   'ultralytics', 'datasets', 'pyarrow', 'timm', 'open_clip', 'sentence_transformers',

@@ -25,12 +25,17 @@ The `-I` test needs `rc_sdk` and `rc_runtime` installed (`pip install ./starter/
 
 ## Policy transport
 
-The class server uses HTTP by default. For Whistle, mount the PEM certificate
-chain and private key into the policy container and set `RC_POLICY_TLS_CERT`
-and `RC_POLICY_TLS_KEY` to their mounted paths. Set both variables to enable
-HTTPS on the policy port. A program entry point supplies its own HTTPS server.
-See the [policy API](../docs/api.md#whistle-https-deployment) for client trust,
-the DNS name and certificate rotation.
+The class server uses HTTP by default, including in the private
+[Whistle mock setup](../docs/api.md#whistle-mock-deployment). The published
+image also supports optional HTTPS via `RC_POLICY_TLS_CERT` and
+`RC_POLICY_TLS_KEY`. Set both variables to enable it. A program entry point
+runs its own server.
+
+NATTEN 0.21.7 is installed from the separately hash-pinned Python-only sdist in
+`locks/requirements.natten.txt`. Its `flex-fna` backend uses PyTorch and does not
+include the compiled libnatten kernels. It has passed a FLUX 3 Action GPU probe;
+see `docs/verification/natten-rc02-2026-11-27.md` for tested devices and limits.
+A new release must be built, tested and pinned before this is available to teams.
 
 ## Update the locks
 
